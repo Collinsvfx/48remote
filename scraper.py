@@ -13,6 +13,7 @@ JOB_URL_CONFIGS = [
     {"url": "https://dribbble.com/jobs?keyword=product+designer&location=", "type": "dribbble"},
     {"url": "https://dribbble.com/jobs?keyword=ui%2Fux+designer&location=", "type": "dribbble"},
     {"url": "https://www.remoterocketship.com/jobs/ui-ux-designer/?page=1&sort=DateAdded&jobTitle=UI%2FUX+Designer", "type": "remoterocketship"},
+    {"url": "https://www.remoterocketship.com/?page=1&sort=DateAdded&jobTitle=Product+Designer&locations=Worldwide", "type": "remoterocketship"}, # Added by user request for Product Designer
     {"url": "https://builtin.com/jobs/remote?search=ui%2Fux+designer&country=USA&allLocations=true", "type": "builtin"}, 
     {"url": "https://up2staff.com/", "type": "up2staff_api"}, 
     {"url": "https://weworkremotely.com/remote-jobs/search?term=ui+ux+designer", "type": "weworkremotely"},
@@ -26,6 +27,7 @@ TIME_THRESHOLD = datetime.now() - timedelta(hours=48)
 
 # --- Helper Function for Time Parsing ---
 def parse_job_time(time_str: str) -> Optional[datetime]:
+    """Parses various time formats (relative and absolute) into a datetime object."""
     time_str = time_str.lower().strip()
     if 'reposted' in time_str:
         time_str = time_str.replace('reposted', '', 1).strip()
@@ -84,8 +86,8 @@ def parse_job_time(time_str: str) -> Optional[datetime]:
 
     return None
 
-# --- SCRAPER FUNCTIONS (same as your original, no changes needed) ---
-# [All your scrape_*_jobs functions go here exactly as provided]
+# --- SCRAPER FUNCTIONS ---
+
 def scrape_productjobsanywhere_jobs(page: Page, url: str) -> List[Dict[str, Any]]:
     print(f"Fetching jobs from Product Jobs Anywhere: {url}")
     jobs = []
@@ -516,9 +518,13 @@ def scrape_realworkfromanywhere_jobs(page: Page, url: str) -> List[Dict[str, Any
         return jobs
 
 def scrape_up2staff_api_jobs(url: str) -> List[Dict[str, Any]]:
+    """
+    Scrapes Up2Staff by making a direct POST request to their internal API endpoint 
+    to retrieve job listings as HTML fragments, then parses the HTML with BeautifulSoup.
+    """
     print(f"Fetching jobs from Up2Staff (via Direct API): {url}")
     jobs = []
-    API_URL = "https://up2staff.com/admin-ajax.php" 
+    API_URL = "https://up2staff.com/admin-ajax.php"
     SKIP_PATHS = ['/cart', '/checkout', '/jobs-dashboard', '/myaccount', '/maltings', '/post-a-job']
     BASE_URL = url.strip('/') 
     PAYLOAD = {
@@ -549,58 +555,81 @@ def scrape_up2staff_api_jobs(url: str) -> List[Dict[str, Any]]:
         except json.JSONDecodeError:
             html_content = response.text
             print("  [Info] API response was raw HTML content.")
+        
         soup = BeautifulSoup(html_content, 'html.parser')
         JOB_WRAPPER_SELECTOR = 'li.job_listing'
         job_wrappers = soup.select(JOB_WRAPPER_SELECTOR)
+        
         if not job_wrappers:
+            # Fallback selectors if the primary one fails
             job_wrappers = soup.select('li:has(a), div.job-item, div.job-listing')
+            
         if not job_wrappers:
             print("  [Warning] BeautifulSoup could not find Up2Staff job card wrappers.")
             return jobs
+            
         print(f"  [Info] BeautifulSoup found {len(job_wrappers)} Up2Staff job cards to process.")
+        
         for i, wrapper in enumerate(job_wrappers):
             title = 'N/A'
             job_url = 'N/A'
             time_tag_text = 'N/A'
             try:
                 title_link = None
+                # Try to find the title link within common header tags
                 for tag_name in ['h3', 'h4', 'h5']:
                     header = wrapper.find(tag_name)
                     if header:
                         title_link = header.find('a', href=True)
                         if title_link:
                             break
+                # If title link wasn't found in a header, look for any top-level link
                 if not title_link:
                      title_link = wrapper.find('a', href=True) 
+
                 if not title_link:
                     continue
+
                 job_url = title_link['href']
+                # Skip navigation links
                 if any(path in job_url for path in SKIP_PATHS):
                     continue
+                # Skip links back to the base domain index if not a job post
                 if job_url.strip('/') == BASE_URL:
                     continue
+                
                 title = title_link.get_text(strip=True) 
+                
+                # Try to find the time tag using common classes or keywords
                 time_tag_elem = wrapper.find(lambda tag: tag.name in ['div', 'span', 'p', 'time'] and any(c in tag.get('class', []) for c in ['date', 'posted', 'time', 'wp-job-manager-date']))
                 if time_tag_elem:
                     time_tag_text = time_tag_elem.get_text(strip=True)
                 else:
+                    # Fallback: search all elements for relative time keywords
                     date_elements = wrapper.find_all(['span', 'div', 'p'])
                     for elem in date_elements:
                         text = elem.get_text(strip=True)
                         if any(s in text.lower() for s in ['hour', 'day', 'week', 'minute', 'ago']) or re.search(r'\d{1,2}[/-]\d{1,2}[/-]\d{2,4}', text):
                             time_tag_text = text
                             break
+                            
                 posted_datetime = parse_job_time(time_tag_text)
                 if not posted_datetime or posted_datetime <= TIME_THRESHOLD:
                     continue
+                
                 company = 'N/A'
                 location = 'Remote/Global'
+                
+                # Find company
                 company_tag = wrapper.find(lambda tag: tag.name in ['div', 'span', 'p'] and any(c in tag.get('class', ['']) for c in ['company', 'employer', 'job-company']))
                 if company_tag:
                     company = company_tag.get_text(strip=True)
+                
+                # Find location
                 location_tag = wrapper.find(lambda tag: tag.name in ['div', 'span', 'p'] and any(c in tag.get('class', ['']) for c in ['location', 'job-location']))
                 if location_tag:
                     location = location_tag.get_text(strip=True)
+                    
                 jobs.append({
                     'title': title,
                     'company': company,
@@ -621,7 +650,7 @@ def scrape_up2staff_api_jobs(url: str) -> List[Dict[str, Any]]:
         print(f"  [ERROR] An unexpected error occurred while processing Up2Staff API: {e}")
         return jobs
 
-# --- Main Execution Function (MODIFIED TO SAVE JSON) ---
+# --- Main Execution Function ---
 def scrape_all_jobs():
     all_jobs = []
     print(f"--- Starting Multi-Site Job Scraper (Playwright/Requests) ---")
@@ -633,6 +662,7 @@ def scrape_all_jobs():
             needs_browser = any(config['type'] in browser_required_types for config in JOB_URL_CONFIGS)
             browser: Optional[Browser] = None
             if needs_browser:
+                # Launching with headless=True for background execution
                 browser = p.chromium.launch(headless=True) 
 
             for config in JOB_URL_CONFIGS:
@@ -641,7 +671,9 @@ def scrape_all_jobs():
                 page = None
                 jobs = []
 
+                # Initialize Playwright page for browser-based scrapers
                 if scraper_type in browser_required_types:
+                    # Relaunch browser if it was closed or not initialized (shouldn't happen here, but safe)
                     if not browser: 
                         browser = p.chromium.launch(headless=True)
                     page = browser.new_page(
@@ -649,6 +681,7 @@ def scrape_all_jobs():
                         viewport={'width': 1280, 'height': 960}
                     )
 
+                # Call the appropriate scraping function
                 if scraper_type == "dribbble":
                     jobs = scrape_dribbble_jobs(page, url)
                 elif scraper_type == "remoterocketship":
@@ -666,6 +699,7 @@ def scrape_all_jobs():
                 elif scraper_type == "productjobsanywhere":
                     jobs = scrape_productjobsanywhere_jobs(page, url)
                 elif scraper_type == "up2staff_api": 
+                    # API scraping does not require Playwright/page object
                     jobs = scrape_up2staff_api_jobs(url) 
                 else:
                     print(f"  [ERROR] Unknown scraper type for URL: {url}. Skipping.")
@@ -673,6 +707,7 @@ def scrape_all_jobs():
                 all_jobs.extend(jobs)
                 if page:
                     page.close() 
+                # Be polite to the servers
                 time.sleep(1) 
 
             if browser:
@@ -687,22 +722,26 @@ def scrape_all_jobs():
         # Deduplication
         unique_jobs_map = {}
         for job in all_jobs:
+            # Use URL as the primary deduplication key
             dedupe_key = job['url'] 
+            # For BuiltIn, URL might change due to tracking, so use a normalized title/date as backup key
             if job['source'] in ['BuiltIn']:
                 normalized_title = re.sub(r'\s+', ' ', job['title'].strip().lower())
                 normalized_posted_ago = job['posted_ago'].strip().lower()
                 dedupe_key = f"{job['source']}:{normalized_title}:{normalized_posted_ago}"
+            
             if dedupe_key not in unique_jobs_map:
                 unique_jobs_map[dedupe_key] = job
 
         unique_jobs = list(unique_jobs_map.values())
+        # Sort by posted date, newest first
         sorted_jobs = sorted(unique_jobs, key=lambda x: datetime.strptime(x['posted_datetime'], '%Y-%m-%d %H:%M:%S'), reverse=True)
 
         # Save to jobs.json
         with open('jobs.json', 'w', encoding='utf-8') as f:
             json.dump(sorted_jobs, f, indent=2, ensure_ascii=False)
         
-        print(f"\n✅ SUCCESS: Saved {len(sorted_jobs)} jobs to jobs.json")
+        print(f"\n✅ SUCCESS: Saved {len(sorted_jobs)} unique jobs to jobs.json")
         print(f"   Sources: {sorted({j['source'] for j in sorted_jobs})}")
     else:
         # Save empty array if no jobs
@@ -713,5 +752,3 @@ def scrape_all_jobs():
 # Run the scraper
 if __name__ == "__main__":
     scrape_all_jobs()
-
-

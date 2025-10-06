@@ -11,6 +11,7 @@ from bs4 import BeautifulSoup
 # --- Configuration ---
 JOB_URL_CONFIGS = [
     {"url": "https://dribbble.com/jobs?keyword=product+designer&location=", "type": "dribbble"},
+    {"url": "https://www.remoterocketship.com/?page=1&sort=DateAdded&jobTitle=Product+Designer&locations=Worldwide", "type": "remoterocketship"},
     {"url": "https://dribbble.com/jobs?keyword=ui%2Fux+designer&location=", "type": "dribbble"},
     {"url": "https://www.remoterocketship.com/jobs/ui-ux-designer/?page=1&sort=DateAdded&jobTitle=UI%2FUX+Designer", "type": "remoterocketship"},
     {"url": "https://builtin.com/jobs/remote?search=ui%2Fux+designer&country=USA&allLocations=true", "type": "builtin"}, 
@@ -713,3 +714,4 @@ def scrape_all_jobs():
 # Run the scraper
 if __name__ == "__main__":
     scrape_all_jobs()
+

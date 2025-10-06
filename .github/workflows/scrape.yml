@@ -24,7 +24,7 @@ jobs:
           playwright install chromium
 
       - name: Run scraper
-        run: python app.py
+        run: python scraper.py  # ✅ FIXED: was app.py
 
       - name: Commit and push jobs.json
         run: |

@@ -44,5 +44,13 @@ jobs:
       - name: Commit and Push if Changed
         if: steps.git-check.outputs.changed == 'true'
         run: |
-          git commit -m "Updated jobs.json [auto]"
-          git push
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Fetch and rebase to avoid "fetch first" errors
+          git fetch origin main
+          git rebase origin/main || true
+
+          git add jobs.json
+          git commit -m "Updated jobs.json [auto]" || echo "No changes to commit"
+          git push origin HEAD:main --force

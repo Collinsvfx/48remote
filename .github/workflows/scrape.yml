@@ -1,35 +1,46 @@
-# .github/workflows/scrape.yml
 name: Scrape Jobs Hourly
 
 on:
   schedule:
-    - cron: '0 * * * *'  # Runs every hour at minute 0
-  workflow_dispatch:     # Allows manual run from GitHub UI
+    - cron: '0 * * * *'
+  workflow_dispatch:
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libnss3 libatk1.0-0 libatk-bridge2.0-0 \
+            libcups2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 \
+            libxrandr2 libgbm1 libasound2 xvfb
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: |
           pip install playwright beautifulsoup4 requests
-          playwright install chromium
+          playwright install chromium --with-deps
 
-      - name: Run scraper
-        run: python scraper.py  # ✅ FIXED: was app.py
+      - name: Run scraper with virtual display
+        run: |
+          xvfb-run -a python scraper.py
+        env:
+          DISPLAY: ':99'
 
       - name: Commit and push jobs.json
         run: |
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
           git add jobs.json
-          git commit -m "Update jobs - $(date -u)" || echo "No changes to commit"
+          git commit -m "Update jobs - $(date -u)" || echo "No changes"
           git push

@@ -219,12 +219,25 @@ def scrape_remote_rocketship_jobs(page: Page, url: str) -> List[Dict[str, Any]]:
                 if not time_tag_locator.is_visible():
                     time_tag_locator = wrapper.locator('p.sm\\:hidden').first
                 time_tag_text = time_tag_locator.inner_text().strip()
+                
+                title_link_locator_temp = wrapper.locator('h3.text-lg a').first
+                temp_title = title_link_locator_temp.inner_text().strip() if title_link_locator_temp.is_visible() else "Unknown Title"
+                
                 posted_datetime = parse_job_time(time_tag_text) 
+
+                # --- DIAGNOSTIC LOGGING ---
+                if posted_datetime:
+                    is_recent = posted_datetime > TIME_THRESHOLD
+                    print(f"  [DEBUG] Job: {temp_title}, Time Found: '{time_tag_text}', Parsed Date: {posted_datetime.strftime('%Y-%m-%d %H:%M:%S')}, Recent: {is_recent}")
+                else:
+                    print(f"  [DEBUG] Job: {temp_title}, Time Found: '{time_tag_text}', Parsed Date: FAILED, Recent: False (Skipping)")
+                # --- END DIAGNOSTIC LOGGING ---
+
                 if not posted_datetime or posted_datetime <= TIME_THRESHOLD:
                     continue
-                title_link_locator = wrapper.locator('h3.text-lg a').first
-                title = title_link_locator.inner_text().strip()
-                job_url = title_link_locator.get_attribute('href')
+                
+                title = temp_title
+                job_url = title_link_locator_temp.get_attribute('href')
                 job_url = f"https://www.remoterocketship.com{job_url}" if job_url and job_url.startswith('/') else job_url
                 if not job_url:
                     continue
@@ -251,6 +264,7 @@ def scrape_remote_rocketship_jobs(page: Page, url: str) -> List[Dict[str, Any]]:
                     'source': 'Remote Rocketship'
                 })
             except Exception as e:
+                # print(f"  [DEBUG] Minor error during job extraction: {e}") # Keep silent to avoid clutter unless debugging
                 continue
         print(f"Finished processing Remote Rocketship URL: {url} (Found {len(jobs)} new jobs)")
         return jobs

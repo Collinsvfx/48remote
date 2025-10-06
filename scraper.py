@@ -766,3 +766,4 @@ def scrape_all_jobs():
 # Run the scraper
 if __name__ == "__main__":
     scrape_all_jobs()
+

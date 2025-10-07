@@ -13,8 +13,8 @@ JOB_URL_CONFIGS = [
     {"url": "https://dribbble.com/jobs?keyword=product+designer&location=", "type": "dribbble"},
     {"url": "https://dribbble.com/jobs?keyword=ui%2Fux+designer&location=", "type": "dribbble"},
     {"url": "https://www.remoterocketship.com/jobs/ui-ux-designer/?page=1&sort=DateAdded&jobTitle=UI%2FUX+Designer", "type": "remoterocketship"},
-    {"url": "https://builtin.com/jobs/remote?search=ui%2Fux+designer&country=USA&allLocations=true", "type": "builtin"}, 
-    {"url": "https://up2staff.com/", "type": "up2staff_api"}, 
+    {"url": "https://builtin.com/jobs/remote?search=ui%2Fux+designer&country=USA&allLocations=true", "type": "builtin"},
+    {"url": "https://up2staff.com/", "type": "up2staff_api"},
     {"url": "https://weworkremotely.com/remote-jobs/search?term=ui+ux+designer", "type": "weworkremotely"},
     {"url": "https://justremote.co/remote-ui-ux-jobs", "type": "justremote"},
     {"url": "https://remote4africa.com/jobs/search?q=ui%2Fux+designer", "type": "remote4africa"},
@@ -23,6 +23,38 @@ JOB_URL_CONFIGS = [
 ]
 
 TIME_THRESHOLD = datetime.now() - timedelta(hours=48)
+
+# --- RemoteRocketship selector sets (from first file) ---
+RR_SELECTORS_V1 = {
+    # Target the element that contains all job details
+    'job_list_item': 'div.relative.cursor-pointer div.flex.flex-col',
+    'title': 'h3 a',
+    'company': 'h4 a',
+    'posted_ago': 'p.text-sm.font-semibold.text-secondary',
+    # Location selector from V1, targeting a specific pill element's text
+    'location': 'div.py-2.px-2.my-1:has(p:text-is-not("")) p',
+    'url_base': 'https://www.remoterocketship.com',
+    'source': 'RemoteRocketship',
+    'version': 'V1'
+}
+
+RR_SELECTORS_V2 = {
+    # Target the outer wrapper div that is used as a button
+    'job_list_item': 'div.relative.cursor-pointer',
+    # Title is still wrapped in h3 a
+    'title': 'h3 a',
+    # Company is still wrapped in h4 a
+    'company': 'h4 a',
+    # Posted Ago is in p.text-sm.font-semibold.text-secondary (captures visible one)
+    'posted_ago': 'p.text-sm.font-semibold.text-secondary',
+    # Location is often the text inside the first pill in the last pill group
+    'location': 'div.flex.flex-row.flex-wrap.items-center.-ml-2 div.rounded-3xl p',
+    'url_base': 'https://www.remoterocketship.com',
+    'source': 'RemoteRocketship',
+    'version': 'V2'
+}
+
+RR_ALL_SELECTORS = [RR_SELECTORS_V1, RR_SELECTORS_V2]
 
 # --- Helper Function for Time Parsing ---
 def parse_job_time(time_str: str) -> Optional[datetime]:
@@ -91,11 +123,11 @@ def scrape_productjobsanywhere_jobs(page: Page, url: str) -> List[Dict[str, Any]
     jobs = []
     BASE_URL = "https://productjobsanywhere.com"
     try:
-        page.goto(url, wait_until='domcontentloaded', timeout=60000) 
+        page.goto(url, wait_until='domcontentloaded', timeout=60000)
         JOB_WRAPPER_SELECTOR = 'div[class*="relative flex flex-col justify-start p-4"]'
         WORLDWIDE_FILTER = 'div.flex.text-base:has-text("Worldwide")'
         try:
-            page.wait_for_selector(f"{JOB_WRAPPER_SELECTOR}:has({WORLDWIDE_FILTER})", timeout=30000) 
+            page.wait_for_selector(f"{JOB_WRAPPER_SELECTOR}:has({WORLDWIDE_FILTER})", timeout=30000)
             print("  [Info] Product Jobs Anywhere list elements (Worldwide filtered) are visible.")
         except PlaywrightTimeoutError:
             print("  [Warning] Timeout exceeded waiting for Product Jobs Anywhere worldwide list items.")
@@ -113,7 +145,7 @@ def scrape_productjobsanywhere_jobs(page: Page, url: str) -> List[Dict[str, Any]
                 location = location_locator.inner_text().strip().replace('🌎', '').strip()
                 time_tag_locator = wrapper.locator('span.text-sm.text-gray-400').first
                 time_tag_text = time_tag_locator.inner_text().strip()
-                posted_datetime = parse_job_time(time_tag_text) 
+                posted_datetime = parse_job_time(time_tag_text)
                 if not posted_datetime or posted_datetime <= TIME_THRESHOLD:
                     continue
                 title_link_locator = wrapper.locator('a.absolute.inset-0.z-10').first
@@ -145,10 +177,10 @@ def scrape_dribbble_jobs(page: Page, url: str) -> List[Dict[str, Any]]:
     print(f"Fetching jobs from Dribbble: {url}")
     jobs = []
     try:
-        page.goto(url, wait_until='domcontentloaded', timeout=60000) 
+        page.goto(url, wait_until='domcontentloaded', timeout=60000)
         JOB_WRAPPER_SELECTOR = 'li.job-list-item'
         try:
-            page.wait_for_selector(JOB_WRAPPER_SELECTOR, timeout=30000) 
+            page.wait_for_selector(JOB_WRAPPER_SELECTOR, timeout=30000)
             print("  [Info] Dribbble list elements are visible.")
         except PlaywrightTimeoutError:
             print("  [Warning] Timeout exceeded waiting for Dribbble list items.")
@@ -163,7 +195,7 @@ def scrape_dribbble_jobs(page: Page, url: str) -> List[Dict[str, Any]]:
         for wrapper in job_wrappers:
             try:
                 time_tag_text = wrapper.locator('div.posted-on').first.inner_text().strip()
-                posted_datetime = parse_job_time(time_tag_text) 
+                posted_datetime = parse_job_time(time_tag_text)
                 if not posted_datetime or posted_datetime <= TIME_THRESHOLD:
                     continue
                 job_link_locator = wrapper.locator('a.job-link').first
@@ -192,66 +224,110 @@ def scrape_dribbble_jobs(page: Page, url: str) -> List[Dict[str, Any]]:
         print(f"  [ERROR] An error occurred while processing Dribbble {url}: {e}")
         return jobs
 
+# --- REPLACED Remote Rocketship scraper (failover selectors, adapted) ---
 def scrape_remote_rocketship_jobs(page: Page, url: str) -> List[Dict[str, Any]]:
+    """
+    Remote Rocketship scraper adapted from the selector-failover implementation.
+    Tries RR_SELECTORS_V1 then RR_SELECTORS_V2 until it finds job items.
+    Uses parse_job_time to produce a datetime and filters against TIME_THRESHOLD.
+    """
     print(f"Fetching jobs from Remote Rocketship: {url}")
-    jobs = []
+    jobs: List[Dict[str, Any]] = []
     try:
-        page.goto(url, wait_until='domcontentloaded', timeout=60000) 
-        JOB_WRAPPER_SELECTOR = 'div[role="button"][tabindex="0"]'
-        CRITICAL_CONTENT_SELECTOR = 'h3.text-lg a'
-        try:
-            page.wait_for_selector(CRITICAL_CONTENT_SELECTOR, timeout=60000) 
-            print("  [Info] Remote Rocketship list elements are visible.")
-        except PlaywrightTimeoutError:
-            print("  [Warning] Timeout exceeded waiting for Remote Rocketship list items.")
-            return jobs
-        time.sleep(3) 
-        job_wrappers = page.locator(JOB_WRAPPER_SELECTOR).all()
-        if not job_wrappers:
-            print("  [Warning] Playwright could not find Remote Rocketship job card wrappers.")
-            return jobs
-        print(f"  [Info] Playwright found {len(job_wrappers)} Remote Rocketship job cards to process.")
-        for wrapper in job_wrappers:
+        page.goto(url, wait_until="domcontentloaded", timeout=60000)
+        successfully_scraped = False
+
+        for selectors in RR_ALL_SELECTORS:
             try:
-                time_tag_locator = wrapper.locator('p.hidden.sm\\:block').first
-                if not time_tag_locator.is_visible():
-                    time_tag_locator = wrapper.locator('p.sm\\:hidden').first
-                time_tag_text = time_tag_locator.inner_text().strip()
-                posted_datetime = parse_job_time(time_tag_text) 
-                if not posted_datetime or posted_datetime <= TIME_THRESHOLD:
+                job_list_selector = selectors['job_list_item']
+                print(f"  [Info] Attempting Remote Rocketship selector set: {selectors['version']}")
+                # wait for the wrapper for the selector set
+                page.wait_for_selector(job_list_selector, timeout=5000)
+                job_items = page.locator(job_list_selector).all()
+
+                if not job_items:
+                    print(f"  [Info] Selector {selectors['version']} returned 0 items. Trying next selector...")
                     continue
-                title_link_locator = wrapper.locator('h3.text-lg a').first
-                title = title_link_locator.inner_text().strip()
-                job_url = title_link_locator.get_attribute('href')
-                job_url = f"https://www.remoterocketship.com{job_url}" if job_url and job_url.startswith('/') else job_url
-                if not job_url:
-                    continue
-                company_locator = wrapper.locator('h4 a').first
-                company = company_locator.inner_text().strip()
-                location_elements = wrapper.locator('a[href*="/state/"] p').all()
-                location_elements_text = [elem.inner_text().strip() for elem in location_elements]
-                more_states_locator = wrapper.locator('div p[class*="text-xs sm:text-sm font-semibold text-primary"]:has-text("+")').first
-                if more_states_locator.is_visible():
-                    location_elements_text.append(more_states_locator.inner_text().strip())
-                location = ", ".join(location_elements_text)
-                location = re.sub(r'[\U0001F1E6-\U0001F1FF]+', '', location).strip()
-                location = location.replace('– Remote', '').replace('Remote', '').replace('+', '').strip()
-                location = re.sub(r'\s{2,}', ' ', location).strip(' ,')
-                if not location:
-                    location = "Remote/Global"
-                jobs.append({
-                    'title': title,
-                    'company': company,
-                    'location': location,
-                    'posted_ago': time_tag_text,
-                    'posted_datetime': posted_datetime.strftime('%Y-%m-%d %H:%M:%S'),
-                    'url': job_url,
-                    'source': 'Remote Rocketship'
-                })
-            except Exception as e:
+
+                for job_item in job_items:
+                    try:
+                        # Title and URL
+                        title_el = job_item.locator(selectors['title']).first
+                        if not title_el:
+                            continue
+                        title = title_el.inner_text().strip()
+                        relative_url = title_el.get_attribute('href')
+                        full_url = selectors['url_base'] + relative_url if relative_url else None
+                        if not full_url:
+                            continue
+
+                        # Company
+                        company_el = job_item.locator(selectors['company']).first
+                        company = company_el.inner_text().strip() if company_el and company_el.is_visible() else "N/A"
+
+                        # Posted Ago text (e.g. '3 days ago')
+                        posted_ago_el = job_item.locator(selectors['posted_ago']).first
+                        posted_ago = posted_ago_el.inner_text().strip() if posted_ago_el and posted_ago_el.is_visible() else "N/A"
+
+                        # Parse posted datetime and filter by TIME_THRESHOLD
+                        posted_datetime_obj = parse_job_time(posted_ago)
+                        if not posted_datetime_obj or posted_datetime_obj <= TIME_THRESHOLD:
+                            # Skip old or unparsable postings
+                            continue
+
+                        # Location handling (V1 vs V2 may differ)
+                        location = "Remote/Global"
+                        try:
+                            location_el = job_item.locator(selectors['location']).first
+                            if location_el and location_el.is_visible():
+                                location = location_el.inner_text().strip()
+                        except Exception:
+                            # keep default location if any error
+                            pass
+
+                        # Normalize location (remove emojis, extra markers)
+                        location = re.sub(r'[\U0001F1E6-\U0001F1FF]+', '', location).strip()
+                        location = location.replace('– Remote', '').replace('Remote', '').replace('+', '').strip()
+                        location = re.sub(r'\s{2,}', ' ', location).strip(' ,')
+                        if not location:
+                            location = "Remote/Global"
+
+                        job_data = {
+                            'title': title,
+                            'company': company,
+                            'location': location,
+                            'posted_ago': posted_ago,
+                            'url': full_url,
+                            'posted_datetime': posted_datetime_obj.strftime('%Y-%m-%d %H:%M:%S'),
+                            'source': selectors['source']
+                        }
+                        jobs.append(job_data)
+
+                    except Exception as e:
+                        # skip individual job errors
+                        continue
+
+                # If we reached here and found jobs, break out of failover loop
+                if jobs:
+                    print(f"  [SUCCESS] Found {len(jobs)} jobs using {selectors['version']}.")
+                    successfully_scraped = True
+                    break
+                else:
+                    print(f"  [Info] Selector {selectors['version']} did not yield valid recent jobs. Trying next selector...")
+
+            except PlaywrightTimeoutError:
+                print(f"  [INFO] Selector {selectors['version']} failed (timeout). Trying next selector...")
                 continue
+            except Exception as e:
+                print(f"  [ERROR] Unexpected error when using selector {selectors['version']}: {e}")
+                continue
+
+        if not successfully_scraped:
+            print("  [WARN] RemoteRocketship: All selector attempts failed to find recent jobs.")
+
         print(f"Finished processing Remote Rocketship URL: {url} (Found {len(jobs)} new jobs)")
         return jobs
+
     except Exception as e:
         print(f"  [ERROR] An error occurred while processing Remote Rocketship {url}: {e}")
         return jobs
@@ -260,16 +336,16 @@ def scrape_builtin_jobs(page: Page, url: str) -> List[Dict[str, Any]]:
     print(f"Fetching jobs from BuiltIn: {url}")
     jobs = []
     try:
-        page.goto(url, wait_until='domcontentloaded', timeout=60000) 
+        page.goto(url, wait_until='domcontentloaded', timeout=60000)
         JOB_WRAPPER_SELECTOR = 'div[data-id="job-card"]'
         try:
-            page.wait_for_selector(JOB_WRAPPER_SELECTOR, timeout=60000) 
+            page.wait_for_selector(JOB_WRAPPER_SELECTOR, timeout=60000)
             print("  [Info] BuiltIn list elements are visible.")
         except PlaywrightTimeoutError:
             print("  [Warning] Timeout exceeded waiting for BuiltIn job cards.")
             return jobs
         page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-        time.sleep(3) 
+        time.sleep(3)
         job_wrappers = page.locator(JOB_WRAPPER_SELECTOR).all()
         if not job_wrappers:
             print("  [Warning] Playwright could not find BuiltIn job card wrappers.")
@@ -279,7 +355,7 @@ def scrape_builtin_jobs(page: Page, url: str) -> List[Dict[str, Any]]:
             try:
                 time_tag_locator = wrapper.locator('span:has(i.fa-regular.fa-clock)').first
                 time_tag_text = time_tag_locator.inner_text().strip()
-                posted_datetime = parse_job_time(time_tag_text) 
+                posted_datetime = parse_job_time(time_tag_text)
                 if not posted_datetime or posted_datetime <= TIME_THRESHOLD:
                     continue
                 title_link_locator = wrapper.locator('h2 a.card-alias-after-overlay').first
@@ -317,10 +393,10 @@ def scrape_weworkremotely_jobs(page: Page, url: str) -> List[Dict[str, Any]]:
     print(f"Fetching jobs from WeWorkRemotely: {url}")
     jobs = []
     try:
-        page.goto(url, wait_until='domcontentloaded', timeout=60000) 
+        page.goto(url, wait_until='domcontentloaded', timeout=60000)
         JOB_WRAPPER_SELECTOR = 'li.feature'
         try:
-            page.wait_for_selector(JOB_WRAPPER_SELECTOR, timeout=30000) 
+            page.wait_for_selector(JOB_WRAPPER_SELECTOR, timeout=30000)
             print("  [Info] WeWorkRemotely list elements are visible.")
         except PlaywrightTimeoutError:
             print("  [Warning] Timeout exceeded waiting for WeWorkRemotely list items.")
@@ -338,10 +414,10 @@ def scrape_weworkremotely_jobs(page: Page, url: str) -> List[Dict[str, Any]]:
                 company = wrapper.locator('span.company').first.inner_text().strip()
                 time_tag_locator = wrapper.locator('span.date').first
                 time_tag_text = time_tag_locator.inner_text().strip()
-                posted_datetime = parse_job_time(time_tag_text) 
+                posted_datetime = parse_job_time(time_tag_text)
                 if not posted_datetime or posted_datetime <= TIME_THRESHOLD:
                     continue
-                location = "Remote/Global" 
+                location = "Remote/Global"
                 jobs.append({
                     'title': title,
                     'company': company,
@@ -363,10 +439,10 @@ def scrape_justremote_jobs(page: Page, url: str) -> List[Dict[str, Any]]:
     print(f"Fetching jobs from Just Remote: {url}")
     jobs = []
     try:
-        page.goto(url, wait_until='domcontentloaded', timeout=60000) 
-        JOB_WRAPPER_SELECTOR = 'div[class*="job-card-wrapper"]' 
+        page.goto(url, wait_until='domcontentloaded', timeout=60000)
+        JOB_WRAPPER_SELECTOR = 'div[class*="job-card-wrapper"]'
         try:
-            page.wait_for_selector(JOB_WRAPPER_SELECTOR, timeout=60000) 
+            page.wait_for_selector(JOB_WRAPPER_SELECTOR, timeout=60000)
             print("  [Info] Just Remote list elements are visible.")
         except PlaywrightTimeoutError:
             print("  [Warning] Timeout exceeded waiting for Just Remote list items.")
@@ -390,7 +466,7 @@ def scrape_justremote_jobs(page: Page, url: str) -> List[Dict[str, Any]]:
                 location = location_locator.inner_text().strip() if location_locator.is_visible() else "Remote/Global"
                 time_tag_locator = wrapper.locator('span[class*="date-text"]').first
                 time_tag_text = time_tag_locator.inner_text().strip()
-                posted_datetime = parse_job_time(time_tag_text) 
+                posted_datetime = parse_job_time(time_tag_text)
                 if not posted_datetime or posted_datetime <= TIME_THRESHOLD:
                     continue
                 jobs.append({
@@ -415,10 +491,10 @@ def scrape_remote4africa_jobs(page: Page, url: str) -> List[Dict[str, Any]]:
     jobs = []
     BASE_URL = "https://remote4africa.com"
     try:
-        page.goto(url, wait_until='domcontentloaded', timeout=60000) 
-        JOB_WRAPPER_SELECTOR = 'div[class*="MuiStack-root"][class*="mui-nguhj9"]' 
+        page.goto(url, wait_until='domcontentloaded', timeout=60000)
+        JOB_WRAPPER_SELECTOR = 'div[class*="MuiStack-root"][class*="mui-nguhj9"]'
         try:
-            page.wait_for_selector(JOB_WRAPPER_SELECTOR, timeout=30000) 
+            page.wait_for_selector(JOB_WRAPPER_SELECTOR, timeout=30000)
             print("  [Info] Remote4Africa list elements are visible.")
         except PlaywrightTimeoutError:
             print("  [Warning] Timeout exceeded waiting for Remote4Africa list items.")
@@ -441,7 +517,7 @@ def scrape_remote4africa_jobs(page: Page, url: str) -> List[Dict[str, Any]]:
                 location = "Remote/Africa"
                 time_tag_locator = wrapper.locator('div[class*="mui-15fepi"] p[class*="MuiTypography-body2"]').first
                 time_tag_text = time_tag_locator.inner_text().strip()
-                posted_datetime = parse_job_time(time_tag_text) 
+                posted_datetime = parse_job_time(time_tag_text)
                 if not posted_datetime or posted_datetime <= TIME_THRESHOLD:
                     continue
                 jobs.append({
@@ -466,10 +542,10 @@ def scrape_realworkfromanywhere_jobs(page: Page, url: str) -> List[Dict[str, Any
     jobs = []
     BASE_URL = "https://www.realworkfromanywhere.com"
     try:
-        page.goto(url, wait_until='domcontentloaded', timeout=60000) 
+        page.goto(url, wait_until='domcontentloaded', timeout=60000)
         JOB_WRAPPER_SELECTOR = 'div[class*="flex flex-col m-auto ring-1"][style*="background-color"]'
         try:
-            page.wait_for_selector(JOB_WRAPPER_SELECTOR, timeout=30000) 
+            page.wait_for_selector(JOB_WRAPPER_SELECTOR, timeout=30000)
             print("  [Info] Real Work From Anywhere list elements are visible.")
         except PlaywrightTimeoutError:
             print("  [Warning] Timeout exceeded waiting for Real Work From Anywhere list items.")
@@ -495,7 +571,7 @@ def scrape_realworkfromanywhere_jobs(page: Page, url: str) -> List[Dict[str, Any
                 if not time_tag_locator.is_visible():
                     time_tag_locator = wrapper.locator('div.sm\\:hidden.text-sm.text-right').first
                 time_tag_text = time_tag_locator.inner_text().strip()
-                posted_datetime = parse_job_time(time_tag_text) 
+                posted_datetime = parse_job_time(time_tag_text)
                 if not posted_datetime or posted_datetime <= TIME_THRESHOLD:
                     continue
                 jobs.append({
@@ -518,15 +594,15 @@ def scrape_realworkfromanywhere_jobs(page: Page, url: str) -> List[Dict[str, Any
 def scrape_up2staff_api_jobs(url: str) -> List[Dict[str, Any]]:
     print(f"Fetching jobs from Up2Staff (via Direct API): {url}")
     jobs = []
-    API_URL = "https://up2staff.com/admin-ajax.php" 
+    API_URL = "https://up2staff.com/admin-ajax.php"
     SKIP_PATHS = ['/cart', '/checkout', '/jobs-dashboard', '/myaccount', '/maltings', '/post-a-job']
-    BASE_URL = url.strip('/') 
+    BASE_URL = url.strip('/')
     PAYLOAD = {
         'action': 'get_listings',
-        'key': 'ui/ux designer', 
-        'category': 'design',     
-        'job_type': 'all',        
-        'paged': 1,               
+        'key': 'ui/ux designer',
+        'category': 'design',
+        'job_type': 'all',
+        'paged': 1,
     }
     HEADERS = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
@@ -536,7 +612,7 @@ def scrape_up2staff_api_jobs(url: str) -> List[Dict[str, Any]]:
     }
     try:
         response = requests.post(API_URL, data=PAYLOAD, headers=HEADERS, timeout=15)
-        response.raise_for_status() 
+        response.raise_for_status()
         html_content = ""
         try:
             data = response.json()
@@ -571,7 +647,7 @@ def scrape_up2staff_api_jobs(url: str) -> List[Dict[str, Any]]:
                         if title_link:
                             break
                 if not title_link:
-                     title_link = wrapper.find('a', href=True) 
+                    title_link = wrapper.find('a', href=True)
                 if not title_link:
                     continue
                 job_url = title_link['href']
@@ -579,7 +655,7 @@ def scrape_up2staff_api_jobs(url: str) -> List[Dict[str, Any]]:
                     continue
                 if job_url.strip('/') == BASE_URL:
                     continue
-                title = title_link.get_text(strip=True) 
+                title = title_link.get_text(strip=True)
                 time_tag_elem = wrapper.find(lambda tag: tag.name in ['div', 'span', 'p', 'time'] and any(c in tag.get('class', []) for c in ['date', 'posted', 'time', 'wp-job-manager-date']))
                 if time_tag_elem:
                     time_tag_text = time_tag_elem.get_text(strip=True)
@@ -633,7 +709,7 @@ def scrape_all_jobs():
             needs_browser = any(config['type'] in browser_required_types for config in JOB_URL_CONFIGS)
             browser: Optional[Browser] = None
             if needs_browser:
-                browser = p.chromium.launch(headless=True) 
+                browser = p.chromium.launch(headless=True)
 
             for config in JOB_URL_CONFIGS:
                 url = config['url']
@@ -642,7 +718,7 @@ def scrape_all_jobs():
                 jobs = []
 
                 if scraper_type in browser_required_types:
-                    if not browser: 
+                    if not browser:
                         browser = p.chromium.launch(headless=True)
                     page = browser.new_page(
                         user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
@@ -655,39 +731,39 @@ def scrape_all_jobs():
                     jobs = scrape_remote_rocketship_jobs(page, url)
                 elif scraper_type == "builtin":
                     jobs = scrape_builtin_jobs(page, url)
-                elif scraper_type == "weworkremotely": 
+                elif scraper_type == "weworkremotely":
                     jobs = scrape_weworkremotely_jobs(page, url)
-                elif scraper_type == "justremote": 
+                elif scraper_type == "justremote":
                     jobs = scrape_justremote_jobs(page, url)
                 elif scraper_type == "remote4africa":
-                    jobs = scrape_remote4africa_jobs(page, url) 
+                    jobs = scrape_remote4africa_jobs(page, url)
                 elif scraper_type == "realworkfromanywhere":
-                    jobs = scrape_realworkfromanywhere_jobs(page, url) 
+                    jobs = scrape_realworkfromanywhere_jobs(page, url)
                 elif scraper_type == "productjobsanywhere":
                     jobs = scrape_productjobsanywhere_jobs(page, url)
-                elif scraper_type == "up2staff_api": 
-                    jobs = scrape_up2staff_api_jobs(url) 
+                elif scraper_type == "up2staff_api":
+                    jobs = scrape_up2staff_api_jobs(url)
                 else:
                     print(f"  [ERROR] Unknown scraper type for URL: {url}. Skipping.")
 
                 all_jobs.extend(jobs)
                 if page:
-                    page.close() 
-                time.sleep(1) 
+                    page.close()
+                time.sleep(1)
 
             if browser:
                 browser.close()
 
     except Exception as e:
         print(f"  [CRITICAL ERROR] Failed to initialize Playwright or run browser: {e}")
-        return 
+        return
 
     # --- PROCESS AND SAVE TO JSON ---
     if all_jobs:
         # Deduplication
         unique_jobs_map = {}
         for job in all_jobs:
-            dedupe_key = job['url'] 
+            dedupe_key = job['url']
             if job['source'] in ['BuiltIn']:
                 normalized_title = re.sub(r'\s+', ' ', job['title'].strip().lower())
                 normalized_posted_ago = job['posted_ago'].strip().lower()
@@ -701,14 +777,14 @@ def scrape_all_jobs():
         # Save to jobs.json
         with open('jobs.json', 'w', encoding='utf-8') as f:
             json.dump(sorted_jobs, f, indent=2, ensure_ascii=False)
-        
-        print(f"\n✅ SUCCESS: Saved {len(sorted_jobs)} jobs to jobs.json")
-        print(f"   Sources: {sorted({j['source'] for j in sorted_jobs})}")
+
+        print(f"\nSUCCESS: Saved {len(sorted_jobs)} jobs to jobs.json")
+        print(f"Sources: {sorted({j['source'] for j in sorted_jobs})}")
     else:
         # Save empty array if no jobs
         with open('jobs.json', 'w', encoding='utf-8') as f:
             json.dump([], f)
-        print("\n❌ No jobs found in the last 48 hours. Saved empty jobs.json")
+        print("\nFAILED: No jobs were successfully scraped.")
 
 # Run the scraper
 if __name__ == "__main__":

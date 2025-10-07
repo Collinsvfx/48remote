@@ -9,26 +9,46 @@ on:
 jobs:
   scrape:
     runs-on: ubuntu-latest
+    timeout-minutes: 25  # avoid stuck runs
+
     steps:
-      - name: Checkout code
+      - name: 🧭 Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: 🐍 Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
+      - name: 🧰 Install dependencies
         run: |
-          pip install playwright requests beautifulsoup4
-          playwright install chromium
+          python -m pip install --upgrade pip
+          pip install playwright requests beautifulsoup4 lxml
+          playwright install chromium --with-deps
 
-      - name: Run scraper
-        run: python scraper.py
+      - name: 🧠 Run scraper with safe flags
+        env:
+          PYTHONUNBUFFERED: 1
+          PLAYWRIGHT_BROWSERS_PATH: 0
+        run: |
+          python - <<'PYCODE'
+          import subprocess
+          print("--- Launching scraper (CI safe mode) ---")
+          subprocess.run(
+              ["python", "scraper.py"],
+              check=True,
+              env={
+                  **dict(__import__("os").environ),
+                  "PLAYWRIGHT_HEADLESS": "true",
+                  "PLAYWRIGHT_LAUNCH_ARGS": "--no-sandbox --disable-setuid-sandbox --disable-gpu"
+              }
+          )
+          PYCODE
 
-      - name: Commit and push jobs.json
+      - name: 💾 Commit and push jobs.json (if changed)
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add jobs.json
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Update jobs.json [$(date)]" && git push)
+          git diff --quiet && git diff --staged --quiet || \
+            (git commit -m "Update jobs.json [$(date)]" && git push)
